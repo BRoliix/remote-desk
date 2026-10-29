@@ -1,0 +1,15 @@
+# machine-specific settings (emails, hostnames)
+config.env
+
+# generated connection files
+*.rdp
+!profiles/*.rdp.template
+
+# never commit keys
+id_*
+*.pem
+*.key
+
+.DS_Store
+Thumbs.db
+logs/

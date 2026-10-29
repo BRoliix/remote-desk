@@ -1,0 +1,13 @@
+# >>> remote-desk >>>
+Host win
+    HostName {{WIN_HOST}}
+    User {{WIN_SSH_USER}}
+    IdentityFile ~/.ssh/id_ed25519
+    ServerAliveInterval 30
+
+Host mac
+    HostName {{MAC_HOST}}
+    User {{MAC_USER}}
+    IdentityFile ~/.ssh/id_ed25519
+    ServerAliveInterval 30
+# <<< remote-desk <<<

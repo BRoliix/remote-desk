@@ -1,0 +1,21 @@
+full address:s:{{WIN_HOST}}
+username:s:MicrosoftAccount\{{WIN_USER}}
+prompt for credentials on client:i:0
+authentication level:i:2
+enablecredsspsupport:i:1
+screen mode id:i:2
+use multimon:i:0
+dynamic resolution:i:1
+smart sizing:i:1
+session bpp:i:32
+connection type:i:7
+networkautodetect:i:1
+bandwidthautodetect:i:1
+autoreconnection enabled:i:1
+autoreconnect max retries:i:20
+bitmapcachepersistenable:i:0
+redirectclipboard:i:1
+audiomode:i:0
+audiocapturemode:i:1
+redirectprinters:i:0
+drivestoredirect:s:
