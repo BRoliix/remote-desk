@@ -65,12 +65,19 @@ try {
 
     # --- 4. OpenSSH server --------------------------------------------------
     Write-Step 'OpenSSH Server'
-    $cap = Get-WindowsCapability -Online -Name 'OpenSSH.Server*' | Select-Object -First 1
-    if ($cap.State -ne 'Installed') {
-        Add-WindowsCapability -Online -Name $cap.Name | Out-Null
-        # The capability installer re-creates its own any-address rule.
-        Get-NetFirewallRule -Name 'OpenSSH-Server-In-TCP' -ErrorAction SilentlyContinue | Disable-NetFirewallRule
+    if (-not (Get-Service sshd -ErrorAction SilentlyContinue)) {
+        # winget downloads directly; the Windows capability goes through Windows Update and can hang for ages.
+        winget install --id Microsoft.OpenSSH.Preview --exact --silent --accept-package-agreements --accept-source-agreements
+        if (-not (Get-Service sshd -ErrorAction SilentlyContinue)) {
+            Write-Warn 'winget OpenSSH install failed, falling back to Windows capability (slow)'
+            $cap = Get-WindowsCapability -Online -Name 'OpenSSH.Server*' | Select-Object -First 1
+            Add-WindowsCapability -Online -Name $cap.Name | Out-Null
+        }
     }
+    # Both installers add their own any-address port 22 rule; ours (above) replaces it.
+    Get-NetFirewallRule -ErrorAction SilentlyContinue |
+        Where-Object { $_.DisplayName -like '*OpenSSH*' -and $_.Group -ne $RuleGroup -and $_.Enabled -eq 'True' } |
+        Disable-NetFirewallRule
     Set-Service sshd -StartupType Automatic
     if ((Get-Service sshd).Status -ne 'Running') { Start-Service sshd }
     New-Item -Path 'HKLM:\SOFTWARE\OpenSSH' -Force | Out-Null
