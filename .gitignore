@@ -10,6 +10,8 @@ id_*
 *.pem
 *.key
 
+/target/
+
 .DS_Store
 Thumbs.db
 logs/

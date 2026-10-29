@@ -1,0 +1,13 @@
+[package]
+name = "rd-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+rd-capture.workspace = true
+rd-encode.workspace = true
+rd-proto.workspace = true
+minifb = "0.28"
+openh264 = "0.9"
