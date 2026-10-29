@@ -49,7 +49,9 @@ try {
     $rules = @(
         @{ Name = 'remote-desk-rdp-tcp'; Display = 'remote-desk RDP (TCP 3389)'; Protocol = 'TCP'; Port = 3389 },
         @{ Name = 'remote-desk-rdp-udp'; Display = 'remote-desk RDP (UDP 3389)'; Protocol = 'UDP'; Port = 3389 },
-        @{ Name = 'remote-desk-ssh';     Display = 'remote-desk SSH (TCP 22)';   Protocol = 'TCP'; Port = 22 }
+        @{ Name = 'remote-desk-ssh';     Display = 'remote-desk SSH (TCP 22)';   Protocol = 'TCP'; Port = 22 },
+        @{ Name = 'remote-desk-engine-signal'; Display = 'remote-desk engine viewer (TCP 47080)'; Protocol = 'TCP'; Port = 47080 },
+        @{ Name = 'remote-desk-engine-media';  Display = 'remote-desk engine media (UDP 47081)';  Protocol = 'UDP'; Port = 47081 }
     )
     foreach ($r in $rules) {
         Get-NetFirewallRule -Name $r.Name -ErrorAction SilentlyContinue | Remove-NetFirewallRule

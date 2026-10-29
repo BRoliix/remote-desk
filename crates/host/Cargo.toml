@@ -11,3 +11,14 @@ rd-encode.workspace = true
 rd-proto.workspace = true
 minifb = "0.28"
 openh264 = "0.9"
+tokio = { version = "1.54.1", features = ["full"] }
+axum = { version = "0.8.9", features = ["ws"] }
+webrtc = "0.21.1"
+bytes = "1.12.1"
+rand = "0.10.3"
+arboard = "3.7.0"
+serde_json.workspace = true
+rd-input = { version = "0.1.0", path = "../input" }
+rtc = { version = "0.21.1", default-features = false }
+async-trait = "0.1.92"
+serde = { workspace = true, features = ["derive"] }

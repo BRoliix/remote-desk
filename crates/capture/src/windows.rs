@@ -1,8 +1,8 @@
 //! Windows.Graphics.Capture backend. The OS pushes frames on its own thread;
 //! we keep only the newest one so a slow encoder never builds up latency.
 
-use std::sync::mpsc::{sync_channel, Receiver, SyncSender, TrySendError};
-use std::time::Instant;
+use std::sync::mpsc::{sync_channel, Receiver, RecvTimeoutError, SyncSender, TrySendError};
+use std::time::{Duration, Instant};
 
 use anyhow::Context as _;
 use windows_capture::capture::{CaptureControl, Context, GraphicsCaptureApiHandler};
@@ -76,5 +76,13 @@ impl WgcCapturer {
 impl Capturer for WgcCapturer {
     fn next_frame(&mut self) -> anyhow::Result<Frame> {
         self.rx.recv().context("capture thread stopped")
+    }
+
+    fn next_frame_timeout(&mut self, timeout: Duration) -> anyhow::Result<Option<Frame>> {
+        match self.rx.recv_timeout(timeout) {
+            Ok(frame) => Ok(Some(frame)),
+            Err(RecvTimeoutError::Timeout) => Ok(None),
+            Err(RecvTimeoutError::Disconnected) => anyhow::bail!("capture thread stopped"),
+        }
     }
 }

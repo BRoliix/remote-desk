@@ -1,4 +1,4 @@
-name: ci
+﻿name: ci
 
 on:
   push:
@@ -13,7 +13,7 @@ jobs:
         os: [windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -21,11 +21,13 @@ jobs:
       - run: cargo build --workspace --all-targets
       - run: cargo test --workspace
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo build --release -p rd-host --bin preview
-      - uses: actions/upload-artifact@v4
+      - run: cargo build --release -p rd-host --bins
+      - uses: actions/upload-artifact@v5
         with:
-          name: preview-${{ matrix.os }}
+          name: rd-${{ matrix.os }}
           path: |
+            target/release/rd-host
+            target/release/rd-host.exe
             target/release/preview
             target/release/preview.exe
           if-no-files-found: ignore

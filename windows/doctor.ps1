@@ -23,7 +23,7 @@ $sshd = Get-Service sshd -ErrorAction SilentlyContinue
 if ($sshd -and $sshd.Status -eq 'Running') { Write-Ok 'sshd running' } else { Fail 'sshd not running/installed' 'run windows\setup.ps1 as admin' }
 
 Write-Step 'Firewall'
-foreach ($name in 'remote-desk-rdp-tcp', 'remote-desk-rdp-udp', 'remote-desk-ssh') {
+foreach ($name in 'remote-desk-rdp-tcp', 'remote-desk-rdp-udp', 'remote-desk-ssh', 'remote-desk-engine-signal', 'remote-desk-engine-media') {
     $rule = Get-NetFirewallRule -Name $name -ErrorAction SilentlyContinue
     if ($rule -and $rule.Enabled -eq 'True') { Write-Ok "$name enabled" } else { Fail "$name missing" 'run windows\setup.ps1 as admin' }
 }

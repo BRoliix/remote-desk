@@ -1,5 +1,8 @@
-//! Host agent. M1 only contains the stats helper used by the preview tool;
-//! the WebRTC session lands here in M2.
+//! Host agent: the WebRTC session that streams this screen and accepts input,
+//! plus the signaling server the browser viewer talks to.
+
+pub mod server;
+pub mod session;
 
 use std::time::{Duration, Instant};
 

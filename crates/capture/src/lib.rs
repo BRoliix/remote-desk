@@ -1,6 +1,6 @@
 //! Screen capture. Each platform backend delivers BGRA frames of the primary display.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 #[cfg(windows)]
 mod windows;
@@ -18,6 +18,13 @@ pub struct Frame {
 pub trait Capturer: Send {
     /// Blocks until the next frame is available.
     fn next_frame(&mut self) -> anyhow::Result<Frame>;
+
+    /// Like `next_frame`, but gives up after `timeout`. Backends that only deliver
+    /// frames when the screen changes return `None` while it is static.
+    fn next_frame_timeout(&mut self, timeout: Duration) -> anyhow::Result<Option<Frame>> {
+        let _ = timeout;
+        self.next_frame().map(Some)
+    }
 }
 
 /// Starts capturing the primary display with the best backend for this OS.

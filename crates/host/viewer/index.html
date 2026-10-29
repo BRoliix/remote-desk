@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>remote-desk</title>
+<style>
+  :root { --bg: #0d0f12; --panel: #171a1f; --line: #2a2f37; --text: #e6e8eb; --muted: #8a919c; --accent: #4f8cff; --bad: #ff5d5d; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  #login { height: 100%; display: grid; place-items: center; padding: 16px; }
+  #login form { width: min(340px, 100%); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 24px; display: grid; gap: 12px; }
+  #login h1 { margin: 0; font-size: 18px; }
+  #login p { margin: 0; color: var(--muted); }
+  input[type=password] { width: 100%; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--bg); color: var(--text); font-size: 18px; letter-spacing: 2px; }
+  button { padding: 10px 12px; border-radius: 8px; border: 0; background: var(--accent); color: white; font-weight: 600; cursor: pointer; }
+  button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); font-weight: 500; padding: 4px 10px; }
+  #error { color: var(--bad); min-height: 1.4em; }
+  #stage { position: fixed; inset: 0; display: none; background: black; }
+  #screen { width: 100%; height: 100%; object-fit: contain; cursor: default; outline: none; }
+  #bar { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; align-items: center; background: rgba(23,26,31,.85); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; font-size: 12px; opacity: .25; transition: opacity .2s; }
+  #bar:hover { opacity: 1; }
+  #stats { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  #bar label { display: flex; gap: 4px; align-items: center; color: var(--muted); white-space: nowrap; }
+  #toast { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; display: none; cursor: pointer; max-width: calc(100% - 32px); }
+  #status { position: fixed; inset: 0; display: none; place-items: center; color: var(--muted); pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="login">
+  <form id="form">
+    <h1>remote-desk</h1>
+    <p>Enter the password shown on the host.</p>
+    <input id="password" type="password" inputmode="numeric" autocomplete="off" autofocus required>
+    <button type="submit">Connect</button>
+    <div id="error"></div>
+  </form>
+</div>
+<div id="stage">
+  <video id="screen" autoplay playsinline muted tabindex="0"></video>
+  <div id="status">Connecting…</div>
+  <div id="bar">
+    <span id="stats">–</span>
+    <label title="Send ⌘ as Ctrl, so ⌘C/⌘V work on Windows"><input type="checkbox" id="swapMeta"> ⌘→Ctrl</label>
+    <button class="ghost" id="full">Fullscreen</button>
+    <button class="ghost" id="disconnect">Disconnect</button>
+  </div>
+  <div id="toast"></div>
+</div>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const video = $("screen");
+const isMacViewer = /Mac|iPhone|iPad/.test(navigator.platform);
+let ws, pc, dc, hostOs = "";
+const held = new Set();          // keys currently down, released on blur
+let pendingPaste = null;         // Ctrl/Cmd+V waiting for the paste event
+
+// ---------- connect ----------
+$("form").addEventListener("submit", (e) => { e.preventDefault(); connect($("password").value.trim()); });
+$("disconnect").onclick = () => location.reload();
+$("full").onclick = async () => {
+  await $("stage").requestFullscreen?.();
+  try { await navigator.keyboard?.lock(); } catch {}   // capture Alt+Tab, Esc etc. (Chromium)
+};
+
+function showError(msg) {
+  $("error").textContent = msg;
+  $("login").style.display = "grid";
+  $("stage").style.display = "none";
+}
+
+async function connect(password) {
+  $("error").textContent = "";
+  ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+  ws.onopen = () => ws.send(JSON.stringify({ type: "auth", password }));
+  ws.onclose = () => { if (pc) setStatus("Disconnected. Reload to reconnect."); };
+  ws.onmessage = async (ev) => {
+    const msg = JSON.parse(ev.data);
+    if (msg.type === "error") return showError(msg.message);
+    if (msg.type === "ready") return startPeer();
+    if (msg.type === "answer") await pc.setRemoteDescription({ type: "answer", sdp: msg.sdp });
+  };
+}
+
+async function startPeer() {
+  $("login").style.display = "none";
+  $("stage").style.display = "block";
+  setStatus("Connecting…");
+
+  pc = new RTCPeerConnection();
+  const tr = pc.addTransceiver("video", { direction: "recvonly" });
+  const h264 = RTCRtpReceiver.getCapabilities?.("video")?.codecs.filter((c) => c.mimeType === "video/H264");
+  if (h264?.length && tr.setCodecPreferences) tr.setCodecPreferences(h264);
+  // Play frames as soon as they decode: remote control wants latency, not smoothness.
+  if ("jitterBufferTarget" in tr.receiver) tr.receiver.jitterBufferTarget = 0;
+  if ("playoutDelayHint" in tr.receiver) tr.receiver.playoutDelayHint = 0;
+
+  pc.ontrack = (ev) => { video.srcObject = new MediaStream([ev.track]); video.play().catch(() => {}); };
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === "connected") setStatus("");
+    if (pc.connectionState === "failed") setStatus("Connection failed. Check that UDP 47081 is reachable.");
+  };
+
+  dc = pc.createDataChannel("control", { ordered: true });
+  dc.onopen = () => { send({ t: "request_keyframe" }); video.focus(); };
+  dc.onmessage = (ev) => onHostMsg(JSON.parse(ev.data));
+
+  await pc.setLocalDescription(await pc.createOffer());
+  await gatheringDone(pc, 2000);
+  ws.send(JSON.stringify({ type: "offer", sdp: pc.localDescription.sdp }));
+  setInterval(updateStats, 1000);
+}
+
+function gatheringDone(pc, timeoutMs) {
+  return new Promise((resolve) => {
+    if (pc.iceGatheringState === "complete") return resolve();
+    const t = setTimeout(resolve, timeoutMs);
+    pc.addEventListener("icegatheringstatechange", () => {
+      if (pc.iceGatheringState === "complete") { clearTimeout(t); resolve(); }
+    });
+  });
+}
+
+function setStatus(text) { $("status").textContent = text; $("status").style.display = text ? "grid" : "none"; }
+function send(msg) { if (dc?.readyState === "open") dc.send(JSON.stringify(msg)); }
+
+function onHostMsg(msg) {
+  if (msg.t === "hello") {
+    hostOs = msg.os;
+    $("swapMeta").checked = isMacViewer && hostOs === "windows";
+  } else if (msg.t === "clipboard") {
+    showClipboardToast(msg.text);
+  }
+}
+
+// ---------- stats + freeze recovery ----------
+let lastBytes = 0, lastFrames = 0, stalledSecs = 0;
+async function updateStats() {
+  if (!pc) return;
+  let fps = 0, kbps = 0, rtt = null, frames = 0;
+  (await pc.getStats()).forEach((s) => {
+    if (s.type === "inbound-rtp" && s.kind === "video") {
+      fps = s.framesPerSecond || 0;
+      kbps = Math.round(((s.bytesReceived - lastBytes) * 8) / 1000);
+      lastBytes = s.bytesReceived;
+      frames = s.framesDecoded || 0;
+    }
+    if (s.type === "candidate-pair" && s.nominated && s.currentRoundTripTime != null) rtt = s.currentRoundTripTime * 1000;
+  });
+  // Screen content is often static, so only treat "no frames" as a freeze if data still flows.
+  stalledSecs = frames === lastFrames && kbps > 50 ? stalledSecs + 1 : 0;
+  if (stalledSecs >= 2) { send({ t: "request_keyframe" }); stalledSecs = 0; }
+  lastFrames = frames;
+  $("stats").textContent = `${fps.toFixed(0)} fps · ${kbps} kbps` + (rtt != null ? ` · ${rtt.toFixed(0)} ms rtt` : "");
+}
+
+// ---------- mouse ----------
+function toHost(ev) {
+  // Map a point in the element to 0..1 of the video picture (object-fit: contain letterboxes).
+  const r = video.getBoundingClientRect();
+  const vw = video.videoWidth || r.width, vh = video.videoHeight || r.height;
+  const scale = Math.min(r.width / vw, r.height / vh);
+  const w = vw * scale, h = vh * scale;
+  const x = (ev.clientX - r.left - (r.width - w) / 2) / w;
+  const y = (ev.clientY - r.top - (r.height - h) / 2) / h;
+  return { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
+}
+
+let pendingMove = null;
+video.addEventListener("pointermove", (ev) => {
+  // Coalesce to one move per animation frame.
+  if (!pendingMove) requestAnimationFrame(() => { send({ t: "mouse_move", at: pendingMove }); pendingMove = null; });
+  pendingMove = toHost(ev);
+});
+const BUTTONS = ["left", "middle", "right"];
+video.addEventListener("pointerdown", (ev) => {
+  video.focus();
+  video.setPointerCapture(ev.pointerId);
+  if (BUTTONS[ev.button]) send({ t: "mouse_button", button: BUTTONS[ev.button], down: true, at: toHost(ev) });
+  ev.preventDefault();
+});
+video.addEventListener("pointerup", (ev) => {
+  if (BUTTONS[ev.button]) send({ t: "mouse_button", button: BUTTONS[ev.button], down: false, at: toHost(ev) });
+});
+video.addEventListener("contextmenu", (ev) => ev.preventDefault());
+
+let wheelX = 0, wheelY = 0;
+video.addEventListener("wheel", (ev) => {
+  ev.preventDefault();
+  const unit = ev.deltaMode === 1 ? 1 : ev.deltaMode === 2 ? 20 : 1 / 40;   // pixels -> lines
+  wheelX += ev.deltaX * unit; wheelY += ev.deltaY * unit;
+  const dx = Math.trunc(wheelX), dy = Math.trunc(wheelY);
+  if (dx || dy) { send({ t: "wheel", dx, dy }); wheelX -= dx; wheelY -= dy; }
+}, { passive: false });
+
+// ---------- keyboard ----------
+function mapCode(code) {
+  if (!$("swapMeta").checked) return code;
+  return { MetaLeft: "ControlLeft", MetaRight: "ControlRight", ControlLeft: "MetaLeft", ControlRight: "MetaRight" }[code] || code;
+}
+function sendKey(code, down) {
+  if (down) held.add(code); else held.delete(code);
+  send({ t: "key", code: mapCode(code), down });
+}
+function flushPaste(text) {
+  if (!pendingPaste) return;
+  clearTimeout(pendingPaste.timer);
+  if (text) send({ t: "clipboard", text });
+  sendKey(pendingPaste.code, true);
+  const keyUpSeen = pendingPaste.keyUpSeen;
+  pendingPaste = null;
+  if (keyUpSeen) sendKey("KeyV", false);
+}
+
+window.addEventListener("keydown", (ev) => {
+  if ($("stage").style.display !== "block") return;
+  const isPaste = ev.code === "KeyV" && (ev.ctrlKey || ev.metaKey);
+  if (isPaste) {
+    // Let the browser fire "paste" so we can forward the local clipboard first.
+    pendingPaste = { code: ev.code, keyUpSeen: false, timer: setTimeout(() => flushPaste(null), 150) };
+    return;
+  }
+  ev.preventDefault();
+  if (!ev.repeat || held.has(ev.code)) sendKey(ev.code, true);
+});
+window.addEventListener("keyup", (ev) => {
+  if ($("stage").style.display !== "block") return;
+  ev.preventDefault();
+  if (pendingPaste && ev.code === "KeyV") { pendingPaste.keyUpSeen = true; return; }
+  sendKey(ev.code, false);
+});
+window.addEventListener("paste", (ev) => {
+  if (!pendingPaste) return;
+  ev.preventDefault();
+  flushPaste(ev.clipboardData?.getData("text/plain") || null);
+});
+// Never leave keys stuck down on the host when this tab loses focus.
+window.addEventListener("blur", () => { for (const code of [...held]) sendKey(code, false); });
+
+// ---------- clipboard from host ----------
+let toastTimer;
+function showClipboardToast(text) {
+  const t = $("toast");
+  t.textContent = `Host copied “${text.length > 60 ? text.slice(0, 60) + "…" : text}” — click to copy here`;
+  t.style.display = "block";
+  t.onclick = async () => { await copyLocal(text); t.style.display = "none"; };
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (t.style.display = "none"), 8000);
+}
+async function copyLocal(text) {
+  try { await navigator.clipboard.writeText(text); return; } catch {}
+  // Plain-http pages have no async clipboard API; this works inside a click handler.
+  const ta = document.createElement("textarea");
+  ta.value = text; document.body.appendChild(ta); ta.select();
+  document.execCommand("copy"); ta.remove();
+}
+</script>
+</body>
+</html>

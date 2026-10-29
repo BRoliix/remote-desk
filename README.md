@@ -68,3 +68,25 @@ docs/     TROUBLESHOOTING.md
 ```
 
 When something breaks, see **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)**.
+
+## Own engine (work in progress)
+
+Our own remote-desktop engine in Rust: capture → H.264 → WebRTC, with mouse, keyboard and clipboard over a data channel. Any modern browser is the viewer.
+
+```powershell
+cargo run --release -p rd-host --bin rd-host     # on the machine to control
+```
+Then on the other device open `http://<host>:47080` (for example `http://it:47080` over Tailscale) and enter the password it prints.
+
+- Ports: TCP 47080 (viewer page + signaling) and UDP 47081 (media). `windows\setup.ps1` opens both, for Tailscale and the local network only.
+- Mac as host: grant **Screen Recording** and **Accessibility** to the terminal (or `rd-host`) in System Settings → Privacy & Security.
+- Mac viewer → Windows host: "⌘→Ctrl" is on automatically, so ⌘C/⌘V act as Ctrl+C/Ctrl+V.
+- `cargo run --release -p rd-host --bin preview` shows the local capture → encode → decode loop with live stats.
+
+| Crate | Purpose |
+|---|---|
+| `crates/capture` | Screen capture (Windows Graphics Capture; xcap on macOS for now) |
+| `crates/encode` | H.264 encoding (OpenH264) |
+| `crates/input` | Input injection (SendInput / CGEvent), keyed by `KeyboardEvent.code` |
+| `crates/proto` | Viewer ↔ host control messages |
+| `crates/host` | WebRTC session, signaling server, browser viewer (`viewer/index.html`) |
