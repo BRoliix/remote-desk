@@ -56,8 +56,11 @@ if (Test-Path $vnc) { Write-Ok 'TigerVNC viewer installed' } else { Fail 'TigerV
 if (Test-Path (Join-Path $env:USERPROFILE '.ssh\id_ed25519')) { Write-Ok 'SSH key present' } else { Fail 'No SSH key' 'run windows\setup.ps1' }
 
 Write-Step 'Power'
-$lid = powercfg /query SCHEME_CURRENT SUB_BUTTONS LIDACTION | Select-String 'Current AC Power Setting Index: (0x[0-9a-f]+)'
-if ($lid -and [Convert]::ToInt32($lid.Matches[0].Groups[1].Value, 16) -eq 0) { Write-Ok 'Lid close on AC: do nothing' } else { Fail 'Lid close on AC will sleep the PC' 'run windows\setup.ps1 as admin' }
+# The lid setting is often hidden from `powercfg /query`, so read the active scheme's value from the registry.
+$scheme = [regex]::Match((powercfg /getactivescheme), '[0-9a-f-]{36}').Value
+$lidKey = "HKLM:\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\$scheme\4f971e89-eebd-4455-a8de-9e59040e7347\5ca83367-6e45-459f-a27b-476b1d01c936"
+$lid = (Get-ItemProperty $lidKey -ErrorAction SilentlyContinue).ACSettingIndex
+if ($lid -eq 0) { Write-Ok 'Lid close on AC: do nothing' } else { Fail 'Lid close on AC will sleep the PC' 'run windows\setup.ps1 as admin' }
 $sleep = powercfg /query SCHEME_CURRENT SUB_SLEEP STANDBYIDLE | Select-String 'Current AC Power Setting Index: (0x[0-9a-f]+)'
 if ($sleep -and [Convert]::ToInt32($sleep.Matches[0].Groups[1].Value, 16) -eq 0) { Write-Ok 'Sleep on AC: never' } else { Fail 'PC sleeps on AC' 'run windows\setup.ps1 as admin' }
 $battery = Get-CimInstance Win32_Battery -ErrorAction SilentlyContinue
